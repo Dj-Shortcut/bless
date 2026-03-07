@@ -77,6 +77,8 @@ test("capability checks require TTYs and non-dumb terminal", () => {
   assert.equal(canUseInteractiveTerminal({ stdin: new MockStream(), stdout, env: { TERM: "xterm" } }), false);
 });
 
+
+
 test("createRuntime tolerates null env without throwing", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
@@ -241,6 +243,8 @@ test("windows console input failure falls back without crash", () => {
   assert.equal(runtime.state.interactive, false);
   assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
 });
+
+
 
 test("uncaughtException handler prints error and restores terminal", () => {
   const stdin = new MockStream({ isTTY: true });
