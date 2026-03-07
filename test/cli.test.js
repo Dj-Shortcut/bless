@@ -5,7 +5,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { createRuntime, run } from "../src/cli.js";
+import { run } from "../src/cli.js";
+import { createRuntime } from "../src/runtime/terminal.js";
+import { canUseInteractiveTerminal } from "../src/runtime/capabilities.js";
+import { createPagerState } from "../src/pager/state.js";
+import { renderFrame } from "../src/pager/render.js";
+import { decodeKeys } from "../src/pager/input.js";
+import { moveTopLine } from "../src/pager/navigation.js";
+
+const TEST_ENV = { TERM: "xterm-256color" };
 
 class MockStream extends EventEmitter {
   constructor({ isTTY = false } = {}) {
@@ -55,10 +63,72 @@ function createMockProcess() {
   };
 }
 
+test("capability checks require TTYs and non-dumb terminal", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+
+  assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: { TERM: "xterm-256color" } }), true);
+  assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: { TERM: "dumb" } }), false);
+  assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: null }), true);
+  assert.equal(canUseInteractiveTerminal({ stdin: new MockStream(), stdout, env: { TERM: "xterm" } }), false);
+});
+
+test("createRuntime tolerates null env without throwing", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+
+  assert.doesNotThrow(() => createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), env: null }));
+});
+
+test("pager state includes navigation and search placeholders", () => {
+  const state = createPagerState({ interactive: true });
+
+  assert.equal(state.interactive, true);
+  assert.deepEqual(state.cursor, { line: 0, column: 0 });
+  assert.equal(state.topLine, 0);
+  assert.deepEqual(state.search, { query: "", active: false, lastDirection: "forward" });
+});
+
+test("render frame shell matches interactive and non-interactive modes", () => {
+  assert.equal(renderFrame({ interactive: false, platform: "linux" }), "bless (non-interactive mode)\n");
+  assert.equal(renderFrame({ interactive: true, platform: "linux", columns: 100, rows: 40 }), "bless (linux) 100x40\r\n");
+});
+
+test("renderFrame supports viewport content", () => {
+  const out = renderFrame({
+    interactive: true,
+    platform: "linux",
+    columns: 8,
+    rows: 3,
+    lines: ["alpha", "bravo", "charlie"],
+    topLine: 1,
+    status: "q quit"
+  });
+
+  assert.match(out, /\u001b\[H\u001b\[2J/);
+  assert.match(out, /bravo/);
+  assert.match(out, /charlie/);
+  assert.match(out, /q quit/);
+});
+
+test("decodeKeys maps classic and escape keybindings", () => {
+  assert.deepEqual(decodeKeys("j k"), ["down", "pageDown", "up"]);
+  assert.deepEqual(decodeKeys("gGq"), ["top", "bottom", "quit"]);
+  assert.deepEqual(decodeKeys("\u001b[A"), ["up"]);
+  assert.deepEqual(decodeKeys("\u001b[6~"), ["pageDown"]);
+});
+
+test("moveTopLine clamps navigation within bounds", () => {
+  assert.equal(moveTopLine({ topLine: 0, action: "up", pageSize: 5, totalLines: 10 }), 0);
+  assert.equal(moveTopLine({ topLine: 2, action: "down", pageSize: 5, totalLines: 10 }), 3);
+  assert.equal(moveTopLine({ topLine: 7, action: "pageDown", pageSize: 5, totalLines: 10 }), 5);
+  assert.equal(moveTopLine({ topLine: 3, action: "bottom", pageSize: 5, totalLines: 10 }), 5);
+});
+
 test("interactive mode enables and restores raw mode + alt screen", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
-  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess() });
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), env: TEST_ENV });
 
   runtime.setupInteractiveMode();
   assert.equal(stdin.rawMode, true);
@@ -67,6 +137,18 @@ test("interactive mode enables and restores raw mode + alt screen", () => {
   runtime.restoreTerminal();
   assert.equal(stdin.rawMode, false);
   assert.match(stdout.buffer, /\u001b\[\?1049l/);
+});
+
+test("restoreTerminal is idempotent", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), env: TEST_ENV });
+
+  runtime.setupInteractiveMode();
+  runtime.restoreTerminal();
+  runtime.restoreTerminal();
+
+  assert.equal(stdout.buffer.match(/\u001b\[\?1049l/g)?.length, 1);
 });
 
 test("non-interactive mode does not use raw mode or alt screen", () => {
@@ -86,7 +168,7 @@ test("SIGINT cleanup restores terminal, sets exit code 130, and exits", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
   const processRef = createMockProcess();
-  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef });
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, env: TEST_ENV });
 
   runtime.setupInteractiveMode();
   runtime.installHandlers();
@@ -98,30 +180,41 @@ test("SIGINT cleanup restores terminal, sets exit code 130, and exits", () => {
   assert.match(stdout.buffer, /\u001b\[\?1049l/);
 });
 
-test("resize handler redraws frame in interactive mode", () => {
+test("resize handler redraws custom callback in interactive mode", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
-  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), platform: "win32" });
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), platform: "win32", env: TEST_ENV });
 
-  runtime.installHandlers();
+  runtime.installHandlers({ onResize: () => stdout.write("redraw\n") });
   stdout.emit("resize");
 
-  assert.match(stdout.buffer, /bless \(win32\)/);
+  assert.match(stdout.buffer, /redraw/);
+});
+
+test("handler dispose detaches resize listener", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, env: TEST_ENV });
+
+  const removeHandlers = runtime.installHandlers();
+  assert.equal(stdout.listenerCount("resize"), 1);
+
+  removeHandlers();
+  assert.equal(stdout.listenerCount("resize"), 0);
 });
 
 test("SIGINT teardown removes resize listener", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
   const processRef = createMockProcess();
-  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef });
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, env: TEST_ENV });
 
-  const removeHandlers = runtime.installHandlers();
+  runtime.installHandlers();
   assert.equal(stdout.listenerCount("resize"), 1);
 
   processRef.emit("SIGINT");
   assert.equal(stdout.listenerCount("resize"), 0);
-
-  removeHandlers();
 });
 
 test("windows console input failure falls back without crash", () => {
@@ -136,12 +229,47 @@ test("windows console input failure falls back without crash", () => {
     stdout,
     stderr: new MockStream({ isTTY: true }),
     processRef: createMockProcess(),
-    platform: "win32"
+    platform: "win32",
+    env: TEST_ENV
   });
 
   assert.doesNotThrow(() => runtime.setupInteractiveMode());
   assert.equal(runtime.state.interactive, false);
   assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
+});
+
+test("uncaughtException handler prints error and restores terminal", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const stderr = new MockStream({ isTTY: true });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr, processRef, env: TEST_ENV });
+
+  runtime.setupInteractiveMode();
+  runtime.installHandlers();
+  processRef.emit("uncaughtException", new Error("boom"));
+
+  assert.equal(processRef.exitCode, 1);
+  assert.match(stderr.buffer, /boom/);
+  assert.equal(stdin.rawMode, false);
+  assert.match(stdout.buffer, /\u001b\[\?1049l/);
+});
+
+test("unhandledRejection handler prints reason and restores terminal", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const stderr = new MockStream({ isTTY: true });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr, processRef, env: TEST_ENV });
+
+  runtime.setupInteractiveMode();
+  runtime.installHandlers();
+  processRef.emit("unhandledRejection", "reject-reason");
+
+  assert.equal(processRef.exitCode, 1);
+  assert.match(stderr.buffer, /reject-reason/);
+  assert.equal(stdin.rawMode, false);
+  assert.match(stdout.buffer, /\u001b\[\?1049l/);
 });
 
 test("run reads piped input from provided stdin stream", async () => {
@@ -157,20 +285,54 @@ test("run reads piped input from provided stdin stream", async () => {
   assert.equal(stdout.buffer, "piped-content\n");
 });
 
-test("run with file input bypasses interactive pager setup", async () => {
+test("run with file input remains passthrough in non-interactive mode", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
   const filePath = path.join(dir, "input.txt");
   fs.writeFileSync(filePath, "file-content\n", "utf8");
 
   try {
-    const stdin = new MockStream({ isTTY: true });
-    const stdout = new MockStream({ isTTY: true });
+    const stdin = new MockStream({ isTTY: false });
+    const stdout = new MockStream({ isTTY: false });
 
-    await run([filePath], { stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess() });
+    await run([filePath], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess() });
 
     assert.equal(stdout.buffer, "file-content\n");
-    assert.equal(stdin.rawMode, false);
-    assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("run with interactive file input starts pager and quits with q", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
+  const filePath = path.join(dir, "input.txt");
+  fs.writeFileSync(filePath, "line1\nline2\nline3\nline4\n", "utf8");
+
+  try {
+    const stdin = new MockStream({ isTTY: true });
+    const stdout = new MockStream({ isTTY: true });
+    stdout.rows = 3;
+    stdout.columns = 20;
+
+    const runPromise = run([filePath], {
+      stdin,
+      stdout,
+      stderr: new MockStream({ isTTY: true }),
+      processRef: createMockProcess(),
+      env: TEST_ENV,
+      platform: "linux"
+    });
+
+    process.nextTick(() => {
+      stdin.emit("data", " ");
+      stdin.emit("data", "q");
+    });
+
+    await runPromise;
+
+    assert.match(stdout.buffer, /line1/);
+    assert.match(stdout.buffer, /q quit/);
+    assert.match(stdout.buffer, /\u001b\[\?1049h/);
+    assert.match(stdout.buffer, /\u001b\[\?1049l/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
