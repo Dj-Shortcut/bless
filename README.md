@@ -29,9 +29,20 @@ npm link
 printf 'hello from bless\n' | bless
 ```
 
+## Basic interactive pager controls
+
+When viewing a file in an interactive TTY, `bless` now supports a minimal pager loop with classic keys:
+
+- `q` quit
+- `j`/`k` and `↑`/`↓` move one line
+- `space`/`b` and `PgDn`/`PgUp` page down/up
+- `g`/`G` jump to top/bottom
+
 ## Known limitations
 
 - Full-screen behavior (alternate screen + resize) requires an interactive TTY.
+- File viewing still loads the full file into memory; chunked large-file buffering is not implemented yet.
+- Search (`/`, `n`, `N`) is not implemented yet.
 - In non-interactive environments, `bless` reads stdin and echoes it back.
 - On Windows, piped stdin can also fall back to plain output when `bless` cannot acquire interactive console input (for example `\\.\\CONIN$` open failures).
 - `bless` currently has no built-in `--help` or `--version` output.

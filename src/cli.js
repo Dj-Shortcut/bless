@@ -3,24 +3,53 @@ import { pathToFileURL } from "node:url";
 
 import { canUseInteractiveTerminal } from "./runtime/capabilities.js";
 import { createRuntime } from "./runtime/terminal.js";
+import { createPagerController } from "./pager/controller.js";
 
 export { canUseInteractiveTerminal, createRuntime };
+
+function toLines(content) {
+  return content.replace(/\r\n/g, "\n").split("\n");
+}
 
 export async function run(args = [], io = {}) {
   const runtime = createRuntime(io);
   const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
+  const platform = io.platform ?? process.platform;
   const fileArg = args.find((arg) => !arg.startsWith("-"));
   let cancelRead = null;
-  const removeHandlers = runtime.installHandlers({ onSigint: () => cancelRead?.() });
+  let stopPager = null;
+  let redraw = () => runtime.printFrame();
+  const removeHandlers = runtime.installHandlers({ onSigint: () => {
+    cancelRead?.();
+    stopPager?.();
+  }, onResize: () => redraw() });
 
   try {
-    if (!fileArg && runtime.state.interactive) {
-      runtime.setupInteractiveMode();
-    }
-
     if (fileArg) {
       const content = fs.readFileSync(fileArg, "utf8");
+
+      if (runtime.state.interactive) {
+        runtime.setupInteractiveMode();
+        if (!runtime.state.interactive) {
+          stdout.write(content);
+          return;
+        }
+
+        const pager = createPagerController({
+          runtime,
+          stdin,
+          stdout,
+          platform,
+          lines: toLines(content)
+        });
+
+        stopPager = pager.stop;
+        redraw = pager.render;
+        await pager.run();
+        return;
+      }
+
       stdout.write(content);
       return;
     }
@@ -56,6 +85,9 @@ export async function run(args = [], io = {}) {
       return;
     }
 
+    if (runtime.state.interactive) {
+      runtime.setupInteractiveMode();
+    }
     runtime.printFrame();
   } finally {
     runtime.restoreTerminal();
