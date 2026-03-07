@@ -4,6 +4,12 @@ import { pathToFileURL } from "node:url";
 const ALT_SCREEN_ON = "\u001b[?1049h";
 const ALT_SCREEN_OFF = "\u001b[?1049l";
 
+export function canUseInteractiveTerminal({ stdin = process.stdin, stdout = process.stdout, env = process.env } = {}) {
+  if (!stdin.isTTY || !stdout.isTTY) return false;
+  if (env.TERM === "dumb") return false;
+  return true;
+}
+
 export function createRuntime({
   stdin = process.stdin,
   stdout = process.stdout,
@@ -15,7 +21,7 @@ export function createRuntime({
     usedRawMode: false,
     usedAltScreen: false,
     restored: false,
-    interactive: Boolean(stdin.isTTY && stdout.isTTY),
+    interactive: canUseInteractiveTerminal({ stdin, stdout }),
     interrupted: false
   };
 
