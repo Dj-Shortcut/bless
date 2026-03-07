@@ -67,7 +67,17 @@ test("capability checks require TTYs and non-dumb terminal", () => {
 
   assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: { TERM: "xterm-256color" } }), true);
   assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: { TERM: "dumb" } }), false);
+  assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: null }), true);
   assert.equal(canUseInteractiveTerminal({ stdin: new MockStream(), stdout, env: { TERM: "xterm" } }), false);
+});
+
+
+
+test("createRuntime tolerates null env without throwing", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+
+  assert.doesNotThrow(() => createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), env: null }));
 });
 
 test("pager state includes navigation and search placeholders", () => {

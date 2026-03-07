@@ -13,7 +13,8 @@ export function createRuntime({
   processRef = process,
   env = process.env
 } = {}) {
-  const state = createPagerState({ interactive: canUseInteractiveTerminal({ stdin, stdout, env }) });
+  const normalizedEnv = env ?? process.env;
+  const state = createPagerState({ interactive: canUseInteractiveTerminal({ stdin, stdout, env: normalizedEnv }) });
 
   function writeSafe(stream, chunk) {
     try {
