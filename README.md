@@ -20,6 +20,7 @@ printf 'hello from bless\n' | bless
 
 - Full-screen behavior (alternate screen + resize) requires an interactive TTY.
 - In non-interactive environments, `bless` reads stdin and echoes it back.
+- On Windows, piped stdin can also fall back to plain output when `bless` cannot acquire interactive console input (for example `\\.\\CONIN$` open failures).
 - `bless` currently has no built-in `--help` or `--version` output.
 - Windows terminal behavior depends on the host terminal supporting ANSI control sequences.
 - When both a filename and piped stdin are provided, the filename is preferred.
