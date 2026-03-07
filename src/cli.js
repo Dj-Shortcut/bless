@@ -1,167 +1,56 @@
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const ALT_SCREEN_ON = "\u001b[?1049h";
-const ALT_SCREEN_OFF = "\u001b[?1049l";
+import { canUseInteractiveTerminal } from "./runtime/capabilities.js";
+import { createRuntime } from "./runtime/terminal.js";
+import { createPagerController } from "./pager/controller.js";
 
-export function canUseInteractiveTerminal({ stdin = process.stdin, stdout = process.stdout, env = process.env } = {}) {
-  if (!stdin.isTTY || !stdout.isTTY) return false;
-  if (env.TERM === "dumb") return false;
-  return true;
-}
+export { canUseInteractiveTerminal, createRuntime };
 
-export function createRuntime({
-  stdin = process.stdin,
-  stdout = process.stdout,
-  stderr = process.stderr,
-  platform = process.platform,
-  processRef = process
-} = {}) {
-  const state = {
-    usedRawMode: false,
-    usedAltScreen: false,
-    restored: false,
-    interactive: canUseInteractiveTerminal({ stdin, stdout }),
-    interrupted: false
-  };
-
-  function writeSafe(stream, chunk) {
-    try {
-      stream.write(chunk);
-    } catch {
-      // ignore write failures during shutdown
-    }
-  }
-
-  function restoreTerminal() {
-    if (state.restored) {
-      return;
-    }
-    state.restored = true;
-
-    if (state.usedRawMode && typeof stdin.setRawMode === "function") {
-      try {
-        stdin.setRawMode(false);
-      } catch {
-        // no-op
-      }
-    }
-
-    if (state.usedAltScreen) {
-      writeSafe(stdout, ALT_SCREEN_OFF);
-    }
-  }
-
-  function setupInteractiveMode() {
-    if (!state.interactive || typeof stdin.setRawMode !== "function") {
-      return;
-    }
-
-    try {
-      stdin.setRawMode(true);
-      state.usedRawMode = true;
-    } catch {
-      // Windows can fail opening console input (e.g. \\.\CONIN$) even when stdout is a TTY.
-      // Fall back to non-interactive mode instead of crashing.
-      state.interactive = false;
-      return;
-    }
-
-    writeSafe(stdout, ALT_SCREEN_ON);
-    state.usedAltScreen = true;
-  }
-
-  function printFrame() {
-    if (state.interactive) {
-      writeSafe(stdout, `bless (${platform}) ${stdout.columns || 0}x${stdout.rows || 0}\r\n`);
-      return;
-    }
-
-    writeSafe(stdout, "bless (non-interactive mode)\n");
-  }
-
-  function cleanupAndExit(code = 0) {
-    restoreTerminal();
-    processRef.exitCode = code;
-  }
-
-  function installHandlers({ onSigint: onSigintCallback } = {}) {
-    const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
-    let resizeAttached = false;
-
-    let disposed = false;
-    const dispose = () => {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-
-      processRef.removeListener("SIGINT", onSigint);
-      processRef.removeListener("exit", onExit);
-      processRef.removeListener("uncaughtException", onUncaught);
-      processRef.removeListener("unhandledRejection", onUncaught);
-      if (resizeAttached) {
-        stdout.removeListener("resize", printFrame);
-      }
-    };
-
-    const onSigint = () => {
-      dispose();
-      state.interrupted = true;
-      cleanupAndExit(130);
-      onSigintCallback?.();
-      if (typeof processRef.exit === "function") {
-        processRef.exit(130);
-      }
-    };
-    const onExit = () => {
-      dispose();
-      restoreTerminal();
-    };
-    const onUncaught = (error) => {
-      dispose();
-      writeSafe(stderr, `${error?.stack || error}\n`);
-      cleanupAndExit(1);
-    };
-
-    processRef.once("SIGINT", onSigint);
-    processRef.once("exit", onExit);
-    processRef.once("uncaughtException", onUncaught);
-    processRef.once("unhandledRejection", onUncaught);
-
-    if (state.interactive && supportsResize) {
-      stdout.on("resize", printFrame);
-      resizeAttached = true;
-    }
-
-    return dispose;
-  }
-
-  return {
-    state,
-    setupInteractiveMode,
-    restoreTerminal,
-    printFrame,
-    cleanupAndExit,
-    installHandlers
-  };
+function toLines(content) {
+  return content.replace(/\r\n/g, "\n").split("\n");
 }
 
 export async function run(args = [], io = {}) {
   const runtime = createRuntime(io);
   const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
+  const platform = io.platform ?? process.platform;
   const fileArg = args.find((arg) => !arg.startsWith("-"));
   let cancelRead = null;
-  const removeHandlers = runtime.installHandlers({ onSigint: () => cancelRead?.() });
+  let stopPager = null;
+  let redraw = () => runtime.printFrame();
+  const removeHandlers = runtime.installHandlers({ onSigint: () => {
+    cancelRead?.();
+    stopPager?.();
+  }, onResize: () => redraw() });
 
   try {
-    if (!fileArg && runtime.state.interactive) {
-      runtime.setupInteractiveMode();
-    }
-
     if (fileArg) {
       const content = fs.readFileSync(fileArg, "utf8");
+
+      if (runtime.state.interactive) {
+        runtime.setupInteractiveMode();
+        if (!runtime.state.interactive) {
+          stdout.write(content);
+          return;
+        }
+
+        const pager = createPagerController({
+          runtime,
+          stdin,
+          stdout,
+          platform,
+          lines: toLines(content),
+          onWriteFailure: () => runtime.cleanupAndExit(1)
+        });
+
+        stopPager = pager.stop;
+        redraw = pager.render;
+        await pager.run();
+        return;
+      }
+
       stdout.write(content);
       return;
     }
@@ -197,6 +86,9 @@ export async function run(args = [], io = {}) {
       return;
     }
 
+    if (runtime.state.interactive) {
+      runtime.setupInteractiveMode();
+    }
     runtime.printFrame();
   } finally {
     runtime.restoreTerminal();
