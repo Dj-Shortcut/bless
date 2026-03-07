@@ -83,7 +83,24 @@ export function createRuntime({
     const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
     let resizeAttached = false;
 
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+
+      processRef.removeListener("SIGINT", onSigint);
+      processRef.removeListener("exit", onExit);
+      processRef.removeListener("uncaughtException", onUncaught);
+      processRef.removeListener("unhandledRejection", onUncaught);
+      if (resizeAttached) {
+        stdout.removeListener("resize", printFrame);
+      }
+    };
+
     const onSigint = () => {
+      dispose();
       state.interrupted = true;
       cleanupAndExit(130);
       onSigintCallback?.();
@@ -91,8 +108,12 @@ export function createRuntime({
         processRef.exit(130);
       }
     };
-    const onExit = () => restoreTerminal();
+    const onExit = () => {
+      dispose();
+      restoreTerminal();
+    };
     const onUncaught = (error) => {
+      dispose();
       writeSafe(stderr, `${error?.stack || error}\n`);
       cleanupAndExit(1);
     };
@@ -107,15 +128,7 @@ export function createRuntime({
       resizeAttached = true;
     }
 
-    return () => {
-      processRef.removeListener("SIGINT", onSigint);
-      processRef.removeListener("exit", onExit);
-      processRef.removeListener("uncaughtException", onUncaught);
-      processRef.removeListener("unhandledRejection", onUncaught);
-      if (resizeAttached) {
-        stdout.removeListener("resize", printFrame);
-      }
-    };
+    return dispose;
   }
 
   return {
@@ -132,13 +145,15 @@ export async function run(args = [], io = {}) {
   const runtime = createRuntime(io);
   const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
+  const fileArg = args.find((arg) => !arg.startsWith("-"));
   let cancelRead = null;
   const removeHandlers = runtime.installHandlers({ onSigint: () => cancelRead?.() });
 
   try {
-    runtime.setupInteractiveMode();
+    if (!fileArg && runtime.state.interactive) {
+      runtime.setupInteractiveMode();
+    }
 
-    const fileArg = args.find((arg) => !arg.startsWith("-"));
     if (fileArg) {
       const content = fs.readFileSync(fileArg, "utf8");
       stdout.write(content);

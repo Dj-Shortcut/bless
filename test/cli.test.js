@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { createRuntime, run } from "../src/cli.js";
 
@@ -106,6 +109,21 @@ test("resize handler redraws frame in interactive mode", () => {
   assert.match(stdout.buffer, /bless \(win32\)/);
 });
 
+test("SIGINT teardown removes resize listener", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef });
+
+  const removeHandlers = runtime.installHandlers();
+  assert.equal(stdout.listenerCount("resize"), 1);
+
+  processRef.emit("SIGINT");
+  assert.equal(stdout.listenerCount("resize"), 0);
+
+  removeHandlers();
+});
+
 test("windows console input failure falls back without crash", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
@@ -137,6 +155,25 @@ test("run reads piped input from provided stdin stream", async () => {
 
   await run([], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess() });
   assert.equal(stdout.buffer, "piped-content\n");
+});
+
+test("run with file input bypasses interactive pager setup", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
+  const filePath = path.join(dir, "input.txt");
+  fs.writeFileSync(filePath, "file-content\n", "utf8");
+
+  try {
+    const stdin = new MockStream({ isTTY: true });
+    const stdout = new MockStream({ isTTY: true });
+
+    await run([filePath], { stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess() });
+
+    assert.equal(stdout.buffer, "file-content\n");
+    assert.equal(stdin.rawMode, false);
+    assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("run cancels piped read on SIGINT", async () => {
