@@ -12,6 +12,7 @@ import { createPagerState } from "../src/pager/state.js";
 import { renderFrame } from "../src/pager/render.js";
 import { decodeKeys } from "../src/pager/input.js";
 import { moveTopLine } from "../src/pager/navigation.js";
+import { createPagerController } from "../src/pager/controller.js";
 
 const TEST_ENV = { TERM: "xterm-256color" };
 
@@ -118,8 +119,10 @@ test("renderFrame supports viewport content", () => {
 test("decodeKeys maps classic and escape keybindings", () => {
   assert.deepEqual(decodeKeys("j k"), ["down", "pageDown", "up"]);
   assert.deepEqual(decodeKeys("gGq"), ["top", "bottom", "quit"]);
-  assert.deepEqual(decodeKeys("\u001b[A"), ["up"]);
-  assert.deepEqual(decodeKeys("\u001b[6~"), ["pageDown"]);
+  assert.deepEqual(decodeKeys("[A"), ["up"]);
+  assert.deepEqual(decodeKeys("[6~"), ["pageDown"]);
+  assert.deepEqual(decodeKeys("j[Aq"), ["down", "up", "quit"]);
+  assert.deepEqual(decodeKeys("[6~k"), ["pageDown", "up"]);
 });
 
 test("moveTopLine clamps navigation within bounds", () => {
@@ -127,6 +130,36 @@ test("moveTopLine clamps navigation within bounds", () => {
   assert.equal(moveTopLine({ topLine: 2, action: "down", pageSize: 5, totalLines: 10 }), 3);
   assert.equal(moveTopLine({ topLine: 7, action: "pageDown", pageSize: 5, totalLines: 10 }), 5);
   assert.equal(moveTopLine({ topLine: 3, action: "bottom", pageSize: 5, totalLines: 10 }), 5);
+});
+
+
+
+test("pager recomputes page size after terminal resize", async () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  stdout.rows = 24;
+
+  const runtime = {
+    state: {
+      topLine: 0,
+      status: ""
+    }
+  };
+
+  const lines = Array.from({ length: 100 }, (_, i) => `line-${i + 1}`);
+  const pager = createPagerController({ runtime, stdin, stdout, platform: "linux", lines });
+
+  const runPromise = pager.run();
+  process.nextTick(() => {
+    stdin.emit("data", "G");
+    stdout.rows = 5;
+    stdin.emit("data", "G");
+    stdin.emit("data", "q");
+  });
+
+  await runPromise;
+
+  assert.equal(runtime.state.topLine, 96);
 });
 
 test("interactive mode enables and restores raw mode + alt screen", () => {

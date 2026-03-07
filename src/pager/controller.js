@@ -26,9 +26,15 @@ export function renderPagerFrame({ runtime, stdout, platform, lines }) {
 }
 
 export function createPagerController({ runtime, stdin, stdout, platform, lines, onWriteFailure = null }) {
-  const pageSize = Math.max(1, (stdout.rows || 24) - 1);
+  const getPageSize = () => Math.max(1, (stdout.rows || 24) - 1);
+  const clampTopLine = () => {
+    const pageSize = getPageSize();
+    const maxTop = Math.max(0, lines.length - pageSize);
+    runtime.state.topLine = Math.max(0, Math.min(runtime.state.topLine, maxTop));
+  };
 
   const render = () => {
+    clampTopLine();
     runtime.state.status = `q quit · ${runtime.state.topLine + 1}/${Math.max(1, lines.length)}`;
     if (!renderPagerFrame({ runtime, stdout, platform, lines })) {
       onWriteFailure?.();
@@ -60,7 +66,7 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines,
       runtime.state.topLine = moveTopLine({
         topLine: runtime.state.topLine,
         action,
-        pageSize,
+        pageSize: getPageSize(),
         totalLines: lines.length
       });
     }
