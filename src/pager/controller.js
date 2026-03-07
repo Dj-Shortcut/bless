@@ -2,6 +2,15 @@ import { decodeKeys } from "./input.js";
 import { moveTopLine } from "./navigation.js";
 import { renderFrame } from "./render.js";
 
+function writeFrameSafe(stdout, frame) {
+  try {
+    stdout.write(frame);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function renderPagerFrame({ runtime, stdout, platform, lines }) {
   const frame = renderFrame({
     interactive: true,
@@ -12,7 +21,8 @@ export function renderPagerFrame({ runtime, stdout, platform, lines }) {
     topLine: runtime.state.topLine,
     status: runtime.state.status
   });
-  stdout.write(frame);
+
+  return writeFrameSafe(stdout, frame);
 }
 
 export function createPagerController({ runtime, stdin, stdout, platform, lines }) {
@@ -20,7 +30,12 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines 
 
   const render = () => {
     runtime.state.status = `q quit · ${runtime.state.topLine + 1}/${Math.max(1, lines.length)}`;
-    renderPagerFrame({ runtime, stdout, platform, lines });
+    if (!renderPagerFrame({ runtime, stdout, platform, lines })) {
+      finish();
+      return false;
+    }
+
+    return true;
   };
 
   let done = false;

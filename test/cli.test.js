@@ -16,13 +16,14 @@ import { moveTopLine } from "../src/pager/navigation.js";
 const TEST_ENV = { TERM: "xterm-256color" };
 
 class MockStream extends EventEmitter {
-  constructor({ isTTY = false } = {}) {
+  constructor({ isTTY = false, throwOnWriteIncludes = null } = {}) {
     super();
     this.isTTY = isTTY;
     this.columns = 80;
     this.rows = 24;
     this.buffer = "";
     this.rawMode = false;
+    this.throwOnWriteIncludes = throwOnWriteIncludes;
   }
 
   setRawMode(enabled) {
@@ -32,6 +33,9 @@ class MockStream extends EventEmitter {
   setEncoding() {}
 
   write(chunk) {
+    if (this.throwOnWriteIncludes && chunk.includes(this.throwOnWriteIncludes)) {
+      throw new Error("mock write failure");
+    }
     this.buffer += chunk;
   }
 }
@@ -297,6 +301,35 @@ test("run with file input remains passthrough in non-interactive mode", async ()
     await run([filePath], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess() });
 
     assert.equal(stdout.buffer, "file-content\n");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+
+test("run exits cleanly when pager frame write fails", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
+  const filePath = path.join(dir, "input.txt");
+  fs.writeFileSync(filePath, "line1\nline2\n", "utf8");
+
+  try {
+    const stdin = new MockStream({ isTTY: true });
+    const stdout = new MockStream({ isTTY: true, throwOnWriteIncludes: "\u001b[H\u001b[2J" });
+
+    await run([filePath], {
+      stdin,
+      stdout,
+      stderr: new MockStream({ isTTY: true }),
+      processRef: createMockProcess(),
+      env: TEST_ENV,
+      platform: "linux"
+    });
+
+    assert.equal(stdin.listenerCount("data"), 0);
+    assert.equal(stdin.listenerCount("end"), 0);
+    assert.match(stdout.buffer, /\u001b\[\?1049h/);
+    assert.match(stdout.buffer, /\u001b\[\?1049l/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
