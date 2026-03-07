@@ -1,10 +1,10 @@
 {
-  "name": "bless",
+  "name": "@dj-shortcut/bless",
   "version": "0.1.0",
   "description": "bless CLI",
   "type": "module",
   "bin": {
-    "bless": "./bin/bless.js"
+    "bless": "./src/cli.js"
   },
   "files": [
     "bin",
