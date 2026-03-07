@@ -17,7 +17,7 @@ Bless focuses heavily on terminal correctness:
 - SIGINT cleanup
 - piped input behavior
 - Windows console fallback
-- 
+  
 <img width="1920" height="1050" alt="image" src="https://github.com/user-attachments/assets/9402692f-e907-4a45-91b5-b06a5f9ff77f" />
 
 
