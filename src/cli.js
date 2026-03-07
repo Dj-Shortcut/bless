@@ -41,6 +41,8 @@ export async function run(args = [], io = {}) {
           stdin,
           stdout,
           platform,
+          lines: toLines(content),
+          onWriteFailure: () => runtime.cleanupAndExit(1)
           lines: toLines(content)
         });
 
