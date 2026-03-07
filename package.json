@@ -1,0 +1,25 @@
+{
+  "name": "bless",
+  "version": "0.1.0",
+  "description": "bless CLI",
+  "type": "module",
+  "bin": {
+    "bless": "./bin/bless.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "private": false,
+  "keywords": [
+    "cli"
+  ]
+}
