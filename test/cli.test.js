@@ -29,17 +29,25 @@ function createMockProcess() {
   const listeners = new Map();
   return {
     exitCode: 0,
+    exitCalls: [],
     once(event, handler) {
       listeners.set(event, handler);
     },
-    removeListener(event) {
-      listeners.delete(event);
+    removeListener(event, handler) {
+      const current = listeners.get(event);
+      if (!handler || current === handler) {
+        listeners.delete(event);
+      }
     },
     emit(event, value) {
       const handler = listeners.get(event);
       if (handler) {
+        listeners.delete(event);
         handler(value);
       }
+    },
+    exit(code) {
+      this.exitCalls.push(code);
     }
   };
 }
@@ -71,7 +79,7 @@ test("non-interactive mode does not use raw mode or alt screen", () => {
   assert.match(stdout.buffer, /non-interactive mode/);
 });
 
-test("SIGINT cleanup restores terminal and sets exit code 130", () => {
+test("SIGINT cleanup restores terminal, sets exit code 130, and exits", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
   const processRef = createMockProcess();
@@ -82,6 +90,7 @@ test("SIGINT cleanup restores terminal and sets exit code 130", () => {
   processRef.emit("SIGINT");
 
   assert.equal(processRef.exitCode, 130);
+  assert.deepEqual(processRef.exitCalls, [130]);
   assert.equal(stdin.rawMode, false);
   assert.match(stdout.buffer, /\u001b\[\?1049l/);
 });
@@ -128,4 +137,22 @@ test("run reads piped input from provided stdin stream", async () => {
 
   await run([], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess() });
   assert.equal(stdout.buffer, "piped-content\n");
+});
+
+test("run cancels piped read on SIGINT", async () => {
+  const stdin = new MockStream({ isTTY: false });
+  const stdout = new MockStream({ isTTY: false });
+  const processRef = createMockProcess();
+
+  const runPromise = run([], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef });
+
+  process.nextTick(() => {
+    processRef.emit("SIGINT");
+  });
+
+  await runPromise;
+
+  assert.equal(processRef.exitCode, 130);
+  assert.deepEqual(processRef.exitCalls, [130]);
+  assert.equal(stdout.buffer, "");
 });

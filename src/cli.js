@@ -15,7 +15,8 @@ export function createRuntime({
     usedRawMode: false,
     usedAltScreen: false,
     restored: false,
-    interactive: Boolean(stdin.isTTY && stdout.isTTY)
+    interactive: Boolean(stdin.isTTY && stdout.isTTY),
+    interrupted: false
   };
 
   function writeSafe(stream, chunk) {
@@ -64,10 +65,6 @@ export function createRuntime({
     state.usedAltScreen = true;
   }
 
-  function canHandleResize() {
-    return state.interactive && typeof stdout.on === "function" && typeof stdout.removeListener === "function";
-  }
-
   function printFrame() {
     if (state.interactive) {
       writeSafe(stdout, `bless (${platform}) ${stdout.columns || 0}x${stdout.rows || 0}\r\n`);
@@ -82,8 +79,18 @@ export function createRuntime({
     processRef.exitCode = code;
   }
 
-  function installHandlers() {
-    const onSigint = () => cleanupAndExit(130);
+  function installHandlers({ onSigint: onSigintCallback } = {}) {
+    const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
+    let resizeAttached = false;
+
+    const onSigint = () => {
+      state.interrupted = true;
+      cleanupAndExit(130);
+      onSigintCallback?.();
+      if (typeof processRef.exit === "function") {
+        processRef.exit(130);
+      }
+    };
     const onExit = () => restoreTerminal();
     const onUncaught = (error) => {
       writeSafe(stderr, `${error?.stack || error}\n`);
@@ -95,8 +102,9 @@ export function createRuntime({
     processRef.once("uncaughtException", onUncaught);
     processRef.once("unhandledRejection", onUncaught);
 
-    if (canHandleResize()) {
+    if (state.interactive && supportsResize) {
       stdout.on("resize", printFrame);
+      resizeAttached = true;
     }
 
     return () => {
@@ -104,7 +112,7 @@ export function createRuntime({
       processRef.removeListener("exit", onExit);
       processRef.removeListener("uncaughtException", onUncaught);
       processRef.removeListener("unhandledRejection", onUncaught);
-      if (canHandleResize()) {
+      if (resizeAttached) {
         stdout.removeListener("resize", printFrame);
       }
     };
@@ -122,9 +130,10 @@ export function createRuntime({
 
 export async function run(args = [], io = {}) {
   const runtime = createRuntime(io);
-  const removeHandlers = runtime.installHandlers();
   const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
+  let cancelRead = null;
+  const removeHandlers = runtime.installHandlers({ onSigint: () => cancelRead?.() });
 
   try {
     runtime.setupInteractiveMode();
@@ -139,13 +148,30 @@ export async function run(args = [], io = {}) {
     if (!stdin.isTTY) {
       const piped = await new Promise((resolve, reject) => {
         let data = "";
-        stdin.setEncoding("utf8");
-        stdin.on("data", (chunk) => {
+        const onData = (chunk) => {
           data += chunk;
-        });
-        stdin.once("end", () => resolve(data));
-        stdin.once("error", reject);
+        };
+        const onEnd = () => done(resolve, data);
+        const onError = (error) => done(reject, error);
+        const done = (settle, value) => {
+          stdin.removeListener("data", onData);
+          stdin.removeListener("end", onEnd);
+          stdin.removeListener("error", onError);
+          cancelRead = null;
+          settle(value);
+        };
+
+        cancelRead = () => done(resolve, "");
+        stdin.setEncoding("utf8");
+        stdin.on("data", onData);
+        stdin.once("end", onEnd);
+        stdin.once("error", onError);
       });
+
+      if (runtime.state.interrupted) {
+        return;
+      }
+
       stdout.write(piped);
       return;
     }
