@@ -51,6 +51,8 @@ export function createRuntime({
       stdin.setRawMode(true);
       state.usedRawMode = true;
     } catch {
+      // Windows can fail opening console input (e.g. \\.\\CONIN$) even when stdout is a TTY.
+      // Fall back to non-interactive mode instead of crashing.
       state.interactive = false;
       return;
     }

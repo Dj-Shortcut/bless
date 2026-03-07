@@ -197,6 +197,42 @@ test("windows console input failure falls back without crash", () => {
   assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
 });
 
+
+
+test("uncaughtException handler prints error and restores terminal", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const stderr = new MockStream({ isTTY: true });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr, processRef, env: TEST_ENV });
+
+  runtime.setupInteractiveMode();
+  runtime.installHandlers();
+  processRef.emit("uncaughtException", new Error("boom"));
+
+  assert.equal(processRef.exitCode, 1);
+  assert.match(stderr.buffer, /boom/);
+  assert.equal(stdin.rawMode, false);
+  assert.match(stdout.buffer, /\u001b\[\?1049l/);
+});
+
+test("unhandledRejection handler prints reason and restores terminal", () => {
+  const stdin = new MockStream({ isTTY: true });
+  const stdout = new MockStream({ isTTY: true });
+  const stderr = new MockStream({ isTTY: true });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr, processRef, env: TEST_ENV });
+
+  runtime.setupInteractiveMode();
+  runtime.installHandlers();
+  processRef.emit("unhandledRejection", "reject-reason");
+
+  assert.equal(processRef.exitCode, 1);
+  assert.match(stderr.buffer, /reject-reason/);
+  assert.equal(stdin.rawMode, false);
+  assert.match(stdout.buffer, /\u001b\[\?1049l/);
+});
+
 test("run reads piped input from provided stdin stream", async () => {
   const stdin = new MockStream({ isTTY: false });
   const stdout = new MockStream({ isTTY: false });
