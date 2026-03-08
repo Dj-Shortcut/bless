@@ -35,7 +35,11 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines,
 
   const render = () => {
     clampTopLine();
+<<<<<<< HEAD
     runtime.state.status = `q quit · ${runtime.state.topLine + 1}/${Math.max(1, lines.length)}`;
+=======
+    runtime.state.status = `q quit | ${runtime.state.topLine + 1}/${Math.max(1, lines.length)}`;
+>>>>>>> 05d96cf (Document pager controls keys)
     if (!renderPagerFrame({ runtime, stdout, platform, lines })) {
       onWriteFailure?.();
       finish();
@@ -67,7 +71,10 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines,
         topLine: runtime.state.topLine,
         action,
         pageSize: getPageSize(),
+<<<<<<< HEAD
         pageSize,
+=======
+>>>>>>> 05d96cf (Document pager controls keys)
         totalLines: lines.length
       });
     }

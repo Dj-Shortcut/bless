@@ -44,7 +44,10 @@ export async function run(args = [], io = {}) {
           platform,
           lines: toLines(content),
           onWriteFailure: () => runtime.cleanupAndExit(1)
+<<<<<<< HEAD
           lines: toLines(content)
+=======
+>>>>>>> 05d96cf (Document pager controls keys)
         });
 
         stopPager = pager.stop;
