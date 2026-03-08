@@ -82,8 +82,6 @@ export function createRuntime({
   function installHandlers({ onSigint: onSigintCallback, onResize = printFrame } = {}) {
     const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
     const resizeHandler = () => onResize?.();
-  function installHandlers({ onSigint: onSigintCallback } = {}) {
-    const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
     let resizeAttached = false;
 
     let disposed = false;
@@ -130,7 +128,6 @@ export function createRuntime({
 
     if (state.interactive && supportsResize) {
       stdout.on("resize", resizeHandler);
-      stdout.on("resize", printFrame);
       resizeAttached = true;
     }
 
