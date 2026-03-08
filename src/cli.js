@@ -118,6 +118,28 @@ export async function run(args = [], io = {}) {
         return;
       }
 
+      if (runtime.state.interactive) {
+        runtime.setupInteractiveMode();
+        if (!runtime.state.interactive) {
+          await writeAndDrain(stdout, piped);
+          return;
+        }
+
+        const pager = createPagerController({
+          runtime,
+          stdin,
+          stdout,
+          platform,
+          lines: toLines(piped),
+          onWriteFailure: () => runtime.cleanupAndExit(1)
+        });
+
+        stopPager = pager.stop;
+        redraw = pager.render;
+        await pager.run();
+        return;
+      }
+
       await writeAndDrain(stdout, piped);
       return;
     }
