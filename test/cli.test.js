@@ -312,6 +312,33 @@ test("run with file input remains passthrough in non-interactive mode", async ()
 });
 
 
+test("run propagates async stdout errors while waiting for drain", async () => {
+  class BackpressureErrorStream extends MockStream {
+    write(chunk) {
+      this.buffer += chunk;
+      process.nextTick(() => this.emit("error", new Error("mock async write failure")));
+      return false;
+    }
+  }
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
+  const filePath = path.join(dir, "input.txt");
+  fs.writeFileSync(filePath, "file-content\n", "utf8");
+
+  try {
+    const stdin = new MockStream({ isTTY: false });
+    const stdout = new BackpressureErrorStream({ isTTY: false });
+
+    await assert.rejects(
+      run([filePath], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess() }),
+      /mock async write failure/
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 
 test("run exits cleanly when pager frame write fails", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
