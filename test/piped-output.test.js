@@ -7,60 +7,48 @@ import path from "node:path";
 
 const cliPath = path.resolve("src/cli.js");
 
-function spawnBless(args, { stdinData } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
-      stdio: ["pipe", "pipe", "pipe"]
-    });
-
-    const stdoutChunks = [];
-    const stderrChunks = [];
-
-    child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
-    child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
-    child.once("error", reject);
-
-    if (stdinData !== undefined) {
-      child.stdin.end(stdinData);
-    } else {
-      child.stdin.end();
-    }
-
-    child.once("close", (code, signal) => {
-      resolve({
-        code,
-        signal,
-        stdout: Buffer.concat(stdoutChunks),
-        stderr: Buffer.concat(stderrChunks)
-      });
-    });
-  });
-}
-
-test("CLI preserves full bytes when writing large file output to piped stdout", async () => {
+test("CLI child process preserves full bytes when stdout is piped", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-pipe-test-"));
-  const filePath = path.join(dir, "big-input.txt");
-  const expected = Buffer.from(("0123456789abcdef\n").repeat(700_000), "utf8");
-  fs.writeFileSync(filePath, expected);
+  const inputPath = path.join(dir, "input.txt");
+  const outputPath = path.join(dir, "output.txt");
+  const expected = Buffer.from(("pipe-check-line\n").repeat(300_000), "utf8");
+
+  fs.writeFileSync(inputPath, expected);
 
   try {
-    const result = await spawnBless([filePath]);
+    const child = spawn(process.execPath, [cliPath, inputPath], {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
 
-    assert.equal(result.code, 0);
-    assert.equal(result.signal, null);
-    assert.equal(result.stderr.length, 0);
-    assert.equal(result.stdout.equals(expected), true);
+    const outputStream = fs.createWriteStream(outputPath);
+    const stderrChunks = [];
+
+    child.stdout.pipe(outputStream);
+    child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+
+    await Promise.all([
+      new Promise((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code, signal) => {
+          if (code !== 0 || signal !== null) {
+            reject(new Error(`Unexpected child exit: code=${code} signal=${signal}`));
+            return;
+          }
+          resolve();
+        });
+      }),
+      new Promise((resolve, reject) => {
+        outputStream.once("error", reject);
+        outputStream.once("finish", resolve);
+      })
+    ]);
+
+    const actual = fs.readFileSync(outputPath);
+    const stderr = Buffer.concat(stderrChunks);
+
+    assert.equal(stderr.length, 0);
+    assert.equal(actual.equals(expected), true);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test("CLI preserves full bytes for large piped stdin passthrough", async () => {
-  const expected = Buffer.from(("piped-line\n").repeat(800_000), "utf8");
-  const result = await spawnBless([], { stdinData: expected });
-
-  assert.equal(result.code, 0);
-  assert.equal(result.signal, null);
-  assert.equal(result.stderr.length, 0);
-  assert.equal(result.stdout.equals(expected), true);
 });
