@@ -8,6 +8,21 @@ import { createPagerController } from "./pager/controller.js";
 
 export { canUseInteractiveTerminal, createRuntime };
 
+const HELP_TEXT = `Usage: bless [options] [file]\n\nOptions:\n  -h, --help     Show this help message\n  -v, --version  Show bless version\n\nExamples:\n  bless ./notes.txt           # Open file input\n  cat ./notes.txt | bless     # Read from piped stdin\n  git diff | bless            # Page command output\n\nInteractive keybindings:\n  j / k            Move down/up one line\n  Space / b        Page down/up\n  g / G            Jump to start/end\n  q                Quit\n`;
+
+function parseCliFlags(args) {
+  return {
+    showHelp: args.includes("--help") || args.includes("-h"),
+    showVersion: args.includes("--version") || args.includes("-v")
+  };
+}
+
+function readPackageVersion() {
+  const packageJsonPath = new URL("../package.json", import.meta.url);
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+  return `${packageJson.version}\n`;
+}
+
 function toLines(content) {
   return content.replace(/\r\n/g, "\n").split("\n");
 }
@@ -45,9 +60,23 @@ function writeAndDrain(stream, chunk) {
 }
 
 export async function run(args = [], io = {}) {
-  const runtime = createRuntime(io);
   const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
+  const { showHelp, showVersion } = parseCliFlags(args);
+
+  if (showHelp) {
+    await writeAndDrain(stdout, HELP_TEXT);
+    return;
+  }
+
+  if (showVersion) {
+    const providedVersion = io.version ?? process.env.BLESS_VERSION;
+    const version = providedVersion ? `${providedVersion}\n` : readPackageVersion();
+    await writeAndDrain(stdout, version);
+    return;
+  }
+
+  const runtime = createRuntime(io);
   const platform = io.platform ?? process.platform;
   const fileArg = args.find((arg) => !arg.startsWith("-"));
   let cancelRead = null;

@@ -338,6 +338,37 @@ test("unhandledRejection handler prints reason and restores terminal", () => {
   assert.match(stdout.buffer, /\u001b\[\?1049l/);
 });
 
+
+
+test("run prints help text for --help and exits before runtime flow", async () => {
+  const stdout = new MockStream({ isTTY: false });
+
+  await run(["--help"], {
+    stdin: new MockStream({ isTTY: true }),
+    stdout,
+    stderr: new MockStream({ isTTY: false }),
+    processRef: createMockProcess()
+  });
+
+  assert.match(stdout.buffer, /^Usage: bless \[options\] \[file\]/);
+  assert.match(stdout.buffer, /Examples:/);
+  assert.match(stdout.buffer, /cat \.\/notes\.txt \| bless/);
+  assert.match(stdout.buffer, /Interactive keybindings:/);
+});
+
+test("run prints version for --version", async () => {
+  const stdout = new MockStream({ isTTY: false });
+  const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+  await run(["--version"], {
+    stdin: new MockStream({ isTTY: true }),
+    stdout,
+    stderr: new MockStream({ isTTY: false }),
+    processRef: createMockProcess()
+  });
+
+  assert.equal(stdout.buffer, `${packageJson.version}\n`);
+});
 test("run reads piped input from provided stdin stream", async () => {
   const stdin = new MockStream({ isTTY: false });
   const stdout = new MockStream({ isTTY: false });
