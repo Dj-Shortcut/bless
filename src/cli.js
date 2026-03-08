@@ -8,12 +8,13 @@ import { createPagerController } from "./pager/controller.js";
 
 export { canUseInteractiveTerminal, createRuntime };
 
-const HELP_TEXT = `Usage: bless [options] [file]\n\nOptions:\n  -h, --help     Show this help message\n  -v, --version  Show bless version\n\nExamples:\n  bless ./notes.txt           # Open file input\n  cat ./notes.txt | bless     # Read from piped stdin\n  git diff | bless            # Page command output\n\nInteractive keybindings:\n  j / k            Move down/up one line\n  Space / b        Page down/up\n  g / G            Jump to start/end\n  q                Quit\n`;
+const HELP_TEXT = `Usage: bless [options] [file]\n\nOptions:\n  -h, --help      Show this help message\n  -v, --version   Show bless version\n      --no-pager  Disable interactive pager\n\nExamples:\n  bless ./notes.txt           # Open file input\n  cat ./notes.txt | bless     # Read from piped stdin\n  git diff | bless            # Page command output\n\nInteractive keybindings:\n  j / k            Move down/up one line\n  Space / b        Page down/up\n  g / G            Jump to start/end\n  q                Quit\n`;
 
 function parseCliFlags(args) {
   return {
     showHelp: args.includes("--help") || args.includes("-h"),
-    showVersion: args.includes("--version") || args.includes("-v")
+    showVersion: args.includes("--version") || args.includes("-v"),
+    noPager: args.includes("--no-pager")
   };
 }
 
@@ -62,7 +63,7 @@ function writeAndDrain(stream, chunk) {
 export async function run(args = [], io = {}) {
   const stdin = io.stdin ?? process.stdin;
   const stdout = io.stdout ?? process.stdout;
-  const { showHelp, showVersion } = parseCliFlags(args);
+  const { showHelp, showVersion, noPager } = parseCliFlags(args);
 
   if (showHelp) {
     await writeAndDrain(stdout, HELP_TEXT);
@@ -77,6 +78,9 @@ export async function run(args = [], io = {}) {
   }
 
   const runtime = createRuntime(io);
+  if (noPager) {
+    runtime.state.interactive = false;
+  }
   const platform = io.platform ?? process.platform;
   const fileArg = args.find((arg) => !arg.startsWith("-"));
   let cancelRead = null;
