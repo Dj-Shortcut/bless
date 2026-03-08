@@ -12,6 +12,38 @@ function toLines(content) {
   return content.replace(/\r\n/g, "\n").split("\n");
 }
 
+function writeAndDrain(stream, chunk) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      stream.removeListener("drain", onDrain);
+      stream.removeListener("error", onError);
+    };
+
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    stream.once("drain", onDrain);
+    stream.once("error", onError);
+
+    try {
+      if (stream.write(chunk)) {
+        cleanup();
+        resolve();
+      }
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
+  });
+}
+
 export async function run(args = [], io = {}) {
   const runtime = createRuntime(io);
   const stdin = io.stdin ?? process.stdin;
@@ -36,7 +68,7 @@ export async function run(args = [], io = {}) {
       if (runtime.state.interactive) {
         runtime.setupInteractiveMode();
         if (!runtime.state.interactive) {
-          stdout.write(content);
+          await writeAndDrain(stdout, content);
           return;
         }
 
@@ -55,7 +87,7 @@ export async function run(args = [], io = {}) {
         return;
       }
 
-      stdout.write(content);
+      await writeAndDrain(stdout, content);
       return;
     }
 
@@ -86,7 +118,7 @@ export async function run(args = [], io = {}) {
         return;
       }
 
-      stdout.write(piped);
+      await writeAndDrain(stdout, piped);
       return;
     }
 

@@ -37,6 +37,7 @@ class MockStream extends EventEmitter {
       throw new Error("mock write failure");
     }
     this.buffer += chunk;
+    return true;
   }
 }
 
