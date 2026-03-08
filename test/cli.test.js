@@ -338,6 +338,86 @@ test("unhandledRejection handler prints reason and restores terminal", () => {
   assert.match(stdout.buffer, /\u001b\[\?1049l/);
 });
 
+
+
+test("run prints help text for --help and exits before runtime flow", async () => {
+  const stdout = new MockStream({ isTTY: false });
+
+  await run(["--help"], {
+    stdin: new MockStream({ isTTY: true }),
+    stdout,
+    stderr: new MockStream({ isTTY: false }),
+    processRef: createMockProcess()
+  });
+
+  assert.match(stdout.buffer, /^Usage: bless \[options\] \[file\]/);
+  assert.match(stdout.buffer, /Examples:/);
+  assert.match(stdout.buffer, /cat \.\/notes\.txt \| bless/);
+  assert.match(stdout.buffer, /Interactive keybindings:/);
+  assert.match(stdout.buffer, /--no-pager/);
+});
+
+test("run prints version for --version", async () => {
+  const stdout = new MockStream({ isTTY: false });
+  const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+  await run(["--version"], {
+    stdin: new MockStream({ isTTY: true }),
+    stdout,
+    stderr: new MockStream({ isTTY: false }),
+    processRef: createMockProcess()
+  });
+
+  assert.equal(stdout.buffer, `${packageJson.version}\n`);
+});
+
+
+test("run with --no-pager disables interactive mode for file input", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
+  const filePath = path.join(dir, "input.txt");
+  fs.writeFileSync(filePath, "file-content\n", "utf8");
+
+  try {
+    const stdin = new MockStream({ isTTY: true });
+    const stdout = new MockStream({ isTTY: true });
+
+    await run(["--no-pager", filePath], {
+      stdin,
+      stdout,
+      stderr: new MockStream({ isTTY: true }),
+      processRef: createMockProcess(),
+      env: TEST_ENV
+    });
+
+    assert.equal(stdout.buffer, "file-content\n");
+    assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("run with --no-pager keeps piped output in passthrough mode", async () => {
+  const stdin = new MockStream({ isTTY: false });
+  const stdout = new MockStream({ isTTY: true });
+
+  const runPromise = run(["--no-pager"], {
+    stdin,
+    stdout,
+    stderr: new MockStream({ isTTY: true }),
+    processRef: createMockProcess(),
+    env: TEST_ENV
+  });
+
+  process.nextTick(() => {
+    stdin.emit("data", "line1\nline2\n");
+    stdin.emit("end");
+  });
+
+  await runPromise;
+
+  assert.equal(stdout.buffer, "line1\nline2\n");
+  assert.equal(stdout.buffer.includes("\u001b[?1049h"), false);
+});
 test("run reads piped input from provided stdin stream", async () => {
   const stdin = new MockStream({ isTTY: false });
   const stdout = new MockStream({ isTTY: false });
