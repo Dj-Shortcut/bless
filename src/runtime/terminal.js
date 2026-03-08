@@ -80,7 +80,6 @@ export function createRuntime({
   }
 
   function installHandlers({ onSigint: onSigintCallback, onResize = printFrame } = {}) {
-    const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
     const resizeHandler = () => onResize?.();
     let resizeAttached = false;
 
@@ -96,7 +95,7 @@ export function createRuntime({
       processRef.removeListener("uncaughtException", onUncaught);
       processRef.removeListener("unhandledRejection", onUncaught);
       if (resizeAttached) {
-        stdout.removeListener("resize", resizeHandler);
+        processRef.removeListener("SIGWINCH", resizeHandler);
       }
     };
 
@@ -126,8 +125,8 @@ export function createRuntime({
     processRef.once("uncaughtException", onUncaught);
     processRef.once("unhandledRejection", onUncaught);
 
-    if (state.interactive && supportsResize) {
-      stdout.on("resize", resizeHandler);
+    if (state.interactive && typeof processRef.on === "function" && typeof processRef.removeListener === "function") {
+      processRef.on("SIGWINCH", resizeHandler);
       resizeAttached = true;
     }
 

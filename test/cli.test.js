@@ -43,24 +43,47 @@ class MockStream extends EventEmitter {
 
 function createMockProcess() {
   const listeners = new Map();
+
+  const addListener = (event, handler, once = false) => {
+    const handlers = listeners.get(event) ?? [];
+    handlers.push({ handler, once });
+    listeners.set(event, handlers);
+  };
+
   return {
     exitCode: 0,
     exitCalls: [],
+    on(event, handler) {
+      addListener(event, handler);
+    },
     once(event, handler) {
-      listeners.set(event, handler);
+      addListener(event, handler, true);
     },
     removeListener(event, handler) {
-      const current = listeners.get(event);
-      if (!handler || current === handler) {
+      const handlers = listeners.get(event) ?? [];
+      if (!handler) {
+        listeners.delete(event);
+        return;
+      }
+
+      const nextHandlers = handlers.filter((entry) => entry.handler !== handler);
+      if (nextHandlers.length > 0) {
+        listeners.set(event, nextHandlers);
+      } else {
         listeners.delete(event);
       }
     },
     emit(event, value) {
-      const handler = listeners.get(event);
-      if (handler) {
-        listeners.delete(event);
-        handler(value);
+      const handlers = [...(listeners.get(event) ?? [])];
+      for (const entry of handlers) {
+        entry.handler(value);
+        if (entry.once) {
+          this.removeListener(event, entry.handler);
+        }
       }
+    },
+    listenerCount(event) {
+      return (listeners.get(event) ?? []).length;
     },
     exit(code) {
       this.exitCalls.push(code);
@@ -187,41 +210,42 @@ test("SIGINT cleanup restores terminal, sets exit code 130, and exits", () => {
   assert.match(stdout.buffer, /\u001b\[\?1049l/);
 });
 
-test("resize handler redraws custom callback in interactive mode", () => {
+test("SIGWINCH handler redraws custom callback in interactive mode", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
-  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef: createMockProcess(), platform: "win32", env: TEST_ENV });
+  const processRef = createMockProcess();
+  const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, platform: "win32", env: TEST_ENV });
 
   runtime.installHandlers({ onResize: () => stdout.write("redraw\n") });
-  stdout.emit("resize");
+  processRef.emit("SIGWINCH");
 
   assert.match(stdout.buffer, /redraw/);
 });
 
-test("handler dispose detaches resize listener", () => {
+test("handler dispose detaches SIGWINCH listener", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
   const processRef = createMockProcess();
   const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, env: TEST_ENV });
 
   const removeHandlers = runtime.installHandlers();
-  assert.equal(stdout.listenerCount("resize"), 1);
+  assert.equal(processRef.listenerCount("SIGWINCH"), 1);
 
   removeHandlers();
-  assert.equal(stdout.listenerCount("resize"), 0);
+  assert.equal(processRef.listenerCount("SIGWINCH"), 0);
 });
 
-test("SIGINT teardown removes resize listener", () => {
+test("SIGINT teardown removes SIGWINCH listener", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
   const processRef = createMockProcess();
   const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, env: TEST_ENV });
 
   runtime.installHandlers();
-  assert.equal(stdout.listenerCount("resize"), 1);
+  assert.equal(processRef.listenerCount("SIGWINCH"), 1);
 
   processRef.emit("SIGINT");
-  assert.equal(stdout.listenerCount("resize"), 0);
+  assert.equal(processRef.listenerCount("SIGWINCH"), 0);
 });
 
 test("windows console input failure falls back without crash", () => {
