@@ -16,6 +16,13 @@ export function createRuntime({
   const normalizedEnv = env ?? process.env;
   const state = createPagerState({ interactive: canUseInteractiveTerminal({ stdin, stdout, env: normalizedEnv }) });
 
+  function updateViewport() {
+    state.viewport.columns = Math.max(1, stdout.columns || 80);
+    state.viewport.rows = Math.max(1, stdout.rows || 24);
+  }
+
+  updateViewport();
+
   function writeSafe(stream, chunk) {
     try {
       stream.write(chunk);
@@ -63,13 +70,14 @@ export function createRuntime({
   }
 
   function printFrame() {
+    updateViewport();
     writeSafe(
       stdout,
       renderFrame({
         interactive: state.interactive,
         platform,
-        columns: stdout.columns,
-        rows: stdout.rows
+        columns: state.viewport.columns,
+        rows: state.viewport.rows
       })
     );
   }
@@ -80,8 +88,22 @@ export function createRuntime({
   }
 
   function installHandlers({ onSigint: onSigintCallback, onResize = printFrame } = {}) {
-    const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
-    const resizeHandler = () => onResize?.();
+    let resizeScheduled = false;
+    const runResize = () => {
+      resizeScheduled = false;
+      if (disposed) {
+        return;
+      }
+      updateViewport();
+      onResize?.();
+    };
+    const resizeHandler = () => {
+      if (resizeScheduled) {
+        return;
+      }
+      resizeScheduled = true;
+      setImmediate(runResize);
+    };
     let resizeAttached = false;
 
     let disposed = false;
@@ -96,7 +118,7 @@ export function createRuntime({
       processRef.removeListener("uncaughtException", onUncaught);
       processRef.removeListener("unhandledRejection", onUncaught);
       if (resizeAttached) {
-        stdout.removeListener("resize", resizeHandler);
+        processRef.removeListener("SIGWINCH", resizeHandler);
       }
     };
 
@@ -126,8 +148,8 @@ export function createRuntime({
     processRef.once("uncaughtException", onUncaught);
     processRef.once("unhandledRejection", onUncaught);
 
-    if (state.interactive && supportsResize) {
-      stdout.on("resize", resizeHandler);
+    if (state.interactive && typeof processRef.on === "function" && typeof processRef.removeListener === "function") {
+      processRef.on("SIGWINCH", resizeHandler);
       resizeAttached = true;
     }
 
@@ -140,6 +162,7 @@ export function createRuntime({
     restoreTerminal,
     printFrame,
     cleanupAndExit,
-    installHandlers
+    installHandlers,
+    updateViewport
   };
 }
