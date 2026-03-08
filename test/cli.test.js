@@ -7,7 +7,7 @@ import path from "node:path";
 
 import { run } from "../src/cli.js";
 import { createRuntime } from "../src/runtime/terminal.js";
-import { canUseInteractiveTerminal } from "../src/runtime/capabilities.js";
+import { canUseInteractiveTerminal, getTerminalCapabilities } from "../src/runtime/capabilities.js";
 import { createPagerState } from "../src/pager/state.js";
 import { renderFrame } from "../src/pager/render.js";
 import { decodeKeys } from "../src/pager/input.js";
@@ -99,17 +99,30 @@ function createMockProcess() {
   };
 }
 
-test("capability checks require TTYs and non-dumb terminal", () => {
+test("capability checks determine interactive pager mode from TTY input/output", () => {
   const stdin = new MockStream({ isTTY: true });
   const stdout = new MockStream({ isTTY: true });
 
   assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: { TERM: "xterm-256color" } }), true);
   assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: { TERM: "dumb" } }), false);
   assert.equal(canUseInteractiveTerminal({ stdin, stdout, env: null }), true);
-  assert.equal(canUseInteractiveTerminal({ stdin: new MockStream(), stdout, env: { TERM: "xterm" } }), false);
+  assert.equal(canUseInteractiveTerminal({ stdin: new MockStream({ isTTY: false }), stdout, env: { TERM: "xterm" } }), true);
+  assert.equal(canUseInteractiveTerminal({ stdin, stdout: new MockStream({ isTTY: false }), env: { TERM: "xterm" } }), false);
 });
 
 
+test("capability checks expose interactive and passthrough modes", () => {
+  const caps = getTerminalCapabilities({
+    stdin: new MockStream({ isTTY: false }),
+    stdout: new MockStream({ isTTY: true }),
+    env: { TERM: "xterm-256color" }
+  });
+
+  assert.equal(caps.stdinIsTTY, false);
+  assert.equal(caps.stdoutIsTTY, true);
+  assert.equal(caps.interactivePager, true);
+  assert.equal(caps.passthrough, false);
+});
 
 test("createRuntime tolerates null env without throwing", () => {
   const stdin = new MockStream({ isTTY: true });
@@ -336,6 +349,59 @@ test("run reads piped input from provided stdin stream", async () => {
 
   await run([], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess() });
   assert.equal(stdout.buffer, "piped-content\n");
+});
+
+
+test("run with piped input starts pager when stdout is a TTY", async () => {
+  const stdin = new MockStream({ isTTY: false });
+  const stdout = new MockStream({ isTTY: true });
+  stdout.rows = 3;
+  stdout.columns = 20;
+
+  const runPromise = run([], {
+    stdin,
+    stdout,
+    stderr: new MockStream({ isTTY: true }),
+    processRef: createMockProcess(),
+    env: TEST_ENV,
+    platform: "linux"
+  });
+
+  process.nextTick(() => {
+    stdin.emit("data", "line1\nline2\n");
+    stdin.emit("end");
+  });
+
+  setTimeout(() => {
+    stdin.emit("data", "q");
+  }, 0);
+
+  await runPromise;
+
+  assert.match(stdout.buffer, /line1/);
+  assert.match(stdout.buffer, /q quit/);
+  assert.match(stdout.buffer, /\[\?1049h/);
+  assert.match(stdout.buffer, /\[\?1049l/);
+});
+
+
+
+test("run with file input uses passthrough when stdout is not a TTY", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bless-test-"));
+  const filePath = path.join(dir, "input.txt");
+  fs.writeFileSync(filePath, "file-content\n", "utf8");
+
+  try {
+    const stdin = new MockStream({ isTTY: true });
+    const stdout = new MockStream({ isTTY: false });
+
+    await run([filePath], { stdin, stdout, stderr: new MockStream({ isTTY: false }), processRef: createMockProcess(), env: TEST_ENV });
+
+    assert.equal(stdout.buffer, "file-content\n");
+    assert.equal(stdout.buffer.includes("[?1049h"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("run with file input remains passthrough in non-interactive mode", async () => {

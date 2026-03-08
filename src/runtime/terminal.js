@@ -1,4 +1,4 @@
-import { canUseInteractiveTerminal } from "./capabilities.js";
+import { getTerminalCapabilities } from "./capabilities.js";
 import { createPagerState } from "../pager/state.js";
 import { renderFrame } from "../pager/render.js";
 
@@ -23,7 +23,8 @@ export function createRuntime({
   env = process.env
 } = {}) {
   const normalizedEnv = env ?? process.env;
-  const state = createPagerState({ interactive: canUseInteractiveTerminal({ stdin, stdout, env: normalizedEnv }) });
+  const capabilities = getTerminalCapabilities({ stdin, stdout, env: normalizedEnv });
+  const state = createPagerState({ interactive: capabilities.interactivePager });
 
   function updateViewport() {
     state.viewport.columns = Math.max(1, stdout.columns || 80);
