@@ -2,6 +2,10 @@ import { decodeKeys } from "./input.js";
 import { moveTopLine } from "./navigation.js";
 import { renderFrame } from "./render.js";
 
+function getPageSize(stdout) {
+  return Math.max(1, (stdout.rows || 24) - 1);
+}
+
 function writeFrameSafe(stdout, frame) {
   try {
     stdout.write(frame);
@@ -26,11 +30,9 @@ export function renderPagerFrame({ runtime, stdout, platform, lines }) {
 }
 
 export function createPagerController({ runtime, stdin, stdout, platform, lines, onWriteFailure = null }) {
-  const getPageSize = () => Math.max(1, (stdout.rows || 24) - 1);
   const clampTopLine = () => {
-    const pageSize = getPageSize();
-    const maxTop = Math.max(0, lines.length - pageSize);
-    runtime.state.topLine = Math.max(0, Math.min(runtime.state.topLine, maxTop));
+    const pageSize = getPageSize(stdout);
+    runtime.state.topLine = Math.max(0, Math.min(runtime.state.topLine, lines.length - pageSize));
   };
 
   const render = () => {
@@ -63,6 +65,7 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines,
         return;
       }
 
+      const pageSize = getPageSize(stdout);
       runtime.state.topLine = moveTopLine({
         topLine: runtime.state.topLine,
         action,
