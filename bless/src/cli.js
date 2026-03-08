@@ -44,7 +44,6 @@ export async function run(args = [], io = {}) {
           platform,
           lines: toLines(content),
           onWriteFailure: () => runtime.cleanupAndExit(1)
-          lines: toLines(content)
         });
 
         stopPager = pager.stop;
