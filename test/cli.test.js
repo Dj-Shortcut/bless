@@ -116,6 +116,7 @@ test("pager state includes navigation and search placeholders", () => {
   assert.equal(state.interactive, true);
   assert.deepEqual(state.cursor, { line: 0, column: 0 });
   assert.equal(state.topLine, 0);
+  assert.deepEqual(state.viewport, { columns: 80, rows: 24 });
   assert.deepEqual(state.search, { query: "", active: false, lastDirection: "forward" });
 });
 
@@ -217,9 +218,12 @@ test("SIGWINCH handler redraws custom callback in interactive mode", () => {
   const runtime = createRuntime({ stdin, stdout, stderr: new MockStream({ isTTY: true }), processRef, platform: "win32", env: TEST_ENV });
 
   runtime.installHandlers({ onResize: () => stdout.write("redraw\n") });
+  stdout.columns = 61;
+  stdout.rows = 12;
   processRef.emit("SIGWINCH");
 
   assert.match(stdout.buffer, /redraw/);
+  assert.deepEqual(runtime.state.viewport, { columns: 61, rows: 12 });
 });
 
 test("handler dispose detaches SIGWINCH listener", () => {

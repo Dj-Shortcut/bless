@@ -2,8 +2,8 @@ import { decodeKeys } from "./input.js";
 import { moveTopLine } from "./navigation.js";
 import { renderFrame } from "./render.js";
 
-function getPageSize(stdout) {
-  return Math.max(1, (stdout.rows || 24) - 1);
+function getPageSize(runtime) {
+  return Math.max(1, runtime.state.viewport.rows - 1);
 }
 
 function writeFrameSafe(stdout, frame) {
@@ -19,8 +19,8 @@ export function renderPagerFrame({ runtime, stdout, platform, lines }) {
   const frame = renderFrame({
     interactive: true,
     platform,
-    columns: stdout.columns,
-    rows: stdout.rows,
+    columns: runtime.state.viewport.columns,
+    rows: runtime.state.viewport.rows,
     lines,
     topLine: runtime.state.topLine,
     status: runtime.state.status
@@ -31,11 +31,12 @@ export function renderPagerFrame({ runtime, stdout, platform, lines }) {
 
 export function createPagerController({ runtime, stdin, stdout, platform, lines, onWriteFailure = null }) {
   const clampTopLine = () => {
-    const pageSize = getPageSize(stdout);
+    const pageSize = getPageSize(runtime);
     runtime.state.topLine = Math.max(0, Math.min(runtime.state.topLine, lines.length - pageSize));
   };
 
   const render = () => {
+    runtime.updateViewport();
     clampTopLine();
     runtime.state.status = `q quit | ${runtime.state.topLine + 1}/${Math.max(1, lines.length)}`;
     if (!renderPagerFrame({ runtime, stdout, platform, lines })) {
@@ -65,11 +66,10 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines,
         return;
       }
 
-      const pageSize = getPageSize(stdout);
       runtime.state.topLine = moveTopLine({
         topLine: runtime.state.topLine,
         action,
-        pageSize: getPageSize(stdout),
+        pageSize: getPageSize(runtime),
         totalLines: lines.length
       });
     }

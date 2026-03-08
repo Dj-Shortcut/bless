@@ -16,6 +16,13 @@ export function createRuntime({
   const normalizedEnv = env ?? process.env;
   const state = createPagerState({ interactive: canUseInteractiveTerminal({ stdin, stdout, env: normalizedEnv }) });
 
+  function updateViewport() {
+    state.viewport.columns = Math.max(1, stdout.columns || 80);
+    state.viewport.rows = Math.max(1, stdout.rows || 24);
+  }
+
+  updateViewport();
+
   function writeSafe(stream, chunk) {
     try {
       stream.write(chunk);
@@ -63,13 +70,14 @@ export function createRuntime({
   }
 
   function printFrame() {
+    updateViewport();
     writeSafe(
       stdout,
       renderFrame({
         interactive: state.interactive,
         platform,
-        columns: stdout.columns,
-        rows: stdout.rows
+        columns: state.viewport.columns,
+        rows: state.viewport.rows
       })
     );
   }
@@ -80,7 +88,10 @@ export function createRuntime({
   }
 
   function installHandlers({ onSigint: onSigintCallback, onResize = printFrame } = {}) {
-    const resizeHandler = () => onResize?.();
+    const resizeHandler = () => {
+      updateViewport();
+      onResize?.();
+    };
     let resizeAttached = false;
 
     let disposed = false;
@@ -139,6 +150,7 @@ export function createRuntime({
     restoreTerminal,
     printFrame,
     cleanupAndExit,
-    installHandlers
+    installHandlers,
+    updateViewport
   };
 }
