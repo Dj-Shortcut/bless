@@ -5,6 +5,15 @@ import { renderFrame } from "../pager/render.js";
 const ALT_SCREEN_ON = "\u001b[?1049h";
 const ALT_SCREEN_OFF = "\u001b[?1049l";
 
+function scheduleResizeTick(callback) {
+  if (typeof globalThis.setImmediate === "function") {
+    globalThis.setImmediate(callback);
+    return;
+  }
+
+  setTimeout(callback, 0);
+}
+
 export function createRuntime({
   stdin = process.stdin,
   stdout = process.stdout,
@@ -102,7 +111,7 @@ export function createRuntime({
         return;
       }
       resizeScheduled = true;
-      setImmediate(runResize);
+      scheduleResizeTick(runResize);
     };
     let resizeAttached = false;
 

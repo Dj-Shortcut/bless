@@ -15,6 +15,14 @@ import { moveTopLine } from "../src/pager/navigation.js";
 
 const TEST_ENV = { TERM: "xterm-256color" };
 
+function waitForNextTick() {
+  if (typeof globalThis.setImmediate === "function") {
+    return new Promise((resolve) => globalThis.setImmediate(resolve));
+  }
+
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 class MockStream extends EventEmitter {
   constructor({ isTTY = false, throwOnWriteIncludes = null } = {}) {
     super();
@@ -227,7 +235,7 @@ test("SIGWINCH handler redraws custom callback in interactive mode", async () =>
   processRef.emit("SIGWINCH");
   processRef.emit("SIGWINCH");
 
-  await new Promise((resolve) => setImmediate(resolve));
+  await waitForNextTick();
 
   assert.equal(redrawCount, 1);
   assert.match(stdout.buffer, /redraw/);
