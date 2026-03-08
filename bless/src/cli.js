@@ -21,10 +21,13 @@ export async function run(args = [], io = {}) {
   let cancelRead = null;
   let stopPager = null;
   let redraw = () => runtime.printFrame();
-  const removeHandlers = runtime.installHandlers({ onSigint: () => {
-    cancelRead?.();
-    stopPager?.();
-  }, onResize: () => redraw() });
+  const removeHandlers = runtime.installHandlers({
+    onSigint: () => {
+      cancelRead?.();
+      stopPager?.();
+    },
+    onResize: () => redraw()
+  });
 
   try {
     if (fileArg) {
