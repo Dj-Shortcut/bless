@@ -21,10 +21,13 @@ export async function run(args = [], io = {}) {
   let cancelRead = null;
   let stopPager = null;
   let redraw = () => runtime.printFrame();
-  const removeHandlers = runtime.installHandlers({ onSigint: () => {
-    cancelRead?.();
-    stopPager?.();
-  }, onResize: () => redraw() });
+  const removeHandlers = runtime.installHandlers({
+    onSigint: () => {
+      cancelRead?.();
+      stopPager?.();
+    },
+    onResize: () => redraw()
+  });
 
   try {
     if (fileArg) {
@@ -44,10 +47,6 @@ export async function run(args = [], io = {}) {
           platform,
           lines: toLines(content),
           onWriteFailure: () => runtime.cleanupAndExit(1)
-<<<<<<< HEAD
-          lines: toLines(content)
-=======
->>>>>>> 05d96cf (Document pager controls keys)
         });
 
         stopPager = pager.stop;
