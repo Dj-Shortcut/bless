@@ -80,12 +80,6 @@ export function createRuntime({
   }
 
   function installHandlers({ onSigint: onSigintCallback, onResize = printFrame } = {}) {
-<<<<<<< HEAD
-    const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
-    const resizeHandler = () => onResize?.();
-  function installHandlers({ onSigint: onSigintCallback } = {}) {
-=======
->>>>>>> 05d96cf (Document pager controls keys)
     const supportsResize = typeof stdout.on === "function" && typeof stdout.removeListener === "function";
     const resizeHandler = () => onResize?.();
     let resizeAttached = false;
@@ -134,10 +128,6 @@ export function createRuntime({
 
     if (state.interactive && supportsResize) {
       stdout.on("resize", resizeHandler);
-<<<<<<< HEAD
-      stdout.on("resize", printFrame);
-=======
->>>>>>> 05d96cf (Document pager controls keys)
       resizeAttached = true;
     }
 

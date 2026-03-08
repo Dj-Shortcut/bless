@@ -34,11 +34,7 @@ printf 'hello from bless\n' | bless
 When viewing a file in an interactive TTY, `bless` now supports a minimal pager loop with classic keys:
 
 - `q` quit
-<<<<<<< HEAD
-- `j`/`k` and `↑`/`↓` move one line
-=======
 - `j`/`k` and `Up`/`Down` move one line
->>>>>>> 05d96cf (Document pager controls keys)
 - `space`/`b` and `PgDn`/`PgUp` page down/up
 - `g`/`G` jump to top/bottom
 
