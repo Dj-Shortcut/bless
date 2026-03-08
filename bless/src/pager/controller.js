@@ -69,7 +69,7 @@ export function createPagerController({ runtime, stdin, stdout, platform, lines,
       runtime.state.topLine = moveTopLine({
         topLine: runtime.state.topLine,
         action,
-        pageSize,
+        pageSize: getPageSize(),
         totalLines: lines.length
       });
     }
