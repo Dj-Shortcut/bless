@@ -29,6 +29,12 @@ npm link
 printf 'hello from bless\n' | bless
 ```
 
+## CLI options
+
+- `-h, --help` Show this help message
+- `-v, --version` Show bless version
+- `--no-pager` Disable interactive pager
+
 ## Basic interactive pager controls
 
 When viewing a file in an interactive TTY, `bless` now supports a minimal pager loop with classic keys:
@@ -45,7 +51,6 @@ When viewing a file in an interactive TTY, `bless` now supports a minimal pager 
 - Search (`/`, `n`, `N`) is not implemented yet.
 - When stdout is not a TTY, `bless` uses passthrough mode and echoes stdin/file content without pager UI.
 - On Windows, piped stdin can also fall back to plain output when `bless` cannot acquire interactive console input (for example `\\.\\CONIN$` open failures).
-- `bless` currently has no built-in `--help` or `--version` output.
 - Windows terminal behavior depends on the host terminal supporting ANSI control sequences.
 - When both a filename and piped stdin are provided, the filename is preferred.
 - Unexpected runtime failures still attempt cleanup, but if the process is forcibly killed (e.g. SIGKILL), terminal restoration is not possible.
