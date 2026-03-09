@@ -56,6 +56,13 @@ When viewing a file in an interactive TTY, `bless` now supports a minimal pager 
 - When both a filename and piped stdin are provided, the filename is preferred.
 - Unexpected runtime failures still attempt cleanup, but if the process is forcibly killed (e.g. SIGKILL), terminal restoration is not possible.
 
+## Design goals
+
+* minimal pager
+* predictable terminal behavior
+* small dependency surface
+* works with pipes and files
+
 ## Release-readiness checklist (packaging)
 
 ```bash
