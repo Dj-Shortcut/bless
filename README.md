@@ -49,8 +49,8 @@ When viewing a file in an interactive TTY, `bless` now supports a minimal pager 
 - Full-screen behavior (alternate screen + resize) requires an interactive TTY.
 - File viewing still loads the full file into memory; chunked large-file buffering is not implemented yet.
 - Search (`/`, `n`, `N`) is not implemented yet.
-- When stdout is not a TTY, `bless` uses passthrough mode and echoes stdin/file content without pager UI.
-- On Windows, interactive pager mode may fall back to plain output if console input cannot be acquired.
+- The pager runs only when capability checks mark the terminal as interactive (non-`dumb` TERM with TTY output, plus raw-mode setup succeeding); otherwise `bless` falls back to plain passthrough output.
+- On Windows, piped stdin can also fall back to plain output when `bless` cannot acquire interactive console input (for example `\\.\\CONIN$` open failures).
 - `bless` currently has no built-in `--help` or `--version` output.
 - Windows terminal behavior depends on the host terminal supporting ANSI control sequences.
 - When both a filename and piped stdin are provided, the filename is preferred.
