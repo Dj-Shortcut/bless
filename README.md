@@ -29,6 +29,12 @@ npm link
 printf 'hello from bless\n' | bless
 ```
 
+## CLI options
+
+- `-h, --help` Show this help message
+- `-v, --version` Show bless version
+- `--no-pager` Disable interactive pager
+
 ## Basic interactive pager controls
 
 When viewing a file in an interactive TTY, `bless` now supports a minimal pager loop with classic keys:
